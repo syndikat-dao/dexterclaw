@@ -74,6 +74,9 @@ Merge-blocking checks should stay small and deterministic. Optional checks are u
     - Purpose: grouped, rate-limited dependency update PRs (Cargo + GitHub Actions)
 - `.github/workflows/pr-check-status.yml` (`PR Hygiene`)
     - Purpose: nudge stale-but-active PRs to rebase/re-run required checks before queue starvation
+- `.github/workflows/upstream-sync.yml` (`Upstream Sync`)
+    - Purpose: keep a PR-driven sync branch aligned with `zeroclaw-labs/zeroclaw` so upstream engine updates enter through normal review
+    - Guardrail: never pushes directly to `master`; it updates `sync/upstream-master` and opens or refreshes a PR instead
 
 ## Trigger Map
 
@@ -93,6 +96,7 @@ Merge-blocking checks should stay small and deterministic. Optional checks are u
 - `PR Auto Responder`: issue opened/labeled, `pull_request_target` opened/labeled
 - `Stale PR Check`: daily schedule, manual dispatch
 - `PR Hygiene`: every 12 hours schedule, manual dispatch
+- `Upstream Sync`: daily schedule, manual dispatch
 
 ## Fast Triage Guide
 
@@ -108,6 +112,7 @@ Merge-blocking checks should stay small and deterministic. Optional checks are u
 10. Label policy parity failures: inspect `.github/workflows/pr-label-policy-check.yml`.
 11. Docs failures in CI: inspect `docs-quality` job logs in `.github/workflows/ci-run.yml`.
 12. Strict delta lint failures in CI: inspect `lint-strict-delta` job logs and compare with `BASE_SHA` diff scope.
+13. Upstream sync did not open or refresh a PR: inspect `.github/workflows/upstream-sync.yml` summary output and `GITHUB_TOKEN` permissions.
 
 ## Maintenance Rules
 

@@ -69,6 +69,9 @@
     - 目的：分组、速率限制的依赖更新 PR（Cargo + GitHub Actions）
 - `.github/workflows/pr-check-status.yml`（`PR Hygiene`）
     - 目的：提醒陈旧但活跃的 PR 在队列饥饿前 rebase/重新运行必需检查
+- `.github/workflows/upstream-sync.yml`（`Upstream Sync`）
+    - 目的：保持 PR 驱动的同步分支与 `zeroclaw-labs/zeroclaw` 对齐，让上游引擎更新通过正常评审流进入仓库
+    - 护栏：绝不直接推送到 `master`；只更新 `sync/upstream-master` 并创建或刷新 PR
 
 ## 触发地图
 
@@ -86,6 +89,7 @@
 - `PR Auto Responder`：Issue opened/labeled、`pull_request_target` opened/labeled
 - `Stale PR Check`：每日计划、手动触发
 - `PR Hygiene`：每 12 小时计划、手动触发
+- `Upstream Sync`：每日计划、手动触发
 
 ## 快速分类指南
 
@@ -99,6 +103,7 @@
 8. 标签政策一致性失败：检查 `.github/workflows/pr-label-policy-check.yml`。
 9. CI 中的文档检查失败：检查 `.github/workflows/ci-run.yml` 中的 `docs-quality` 作业日志。
 10. CI 中的严格增量代码检查失败：检查 `lint-strict-delta` 作业日志，并与 `BASE_SHA` 差异范围比较。
+11. 上游同步未创建或刷新 PR：检查 `.github/workflows/upstream-sync.yml` 的摘要输出和 `GITHUB_TOKEN` 权限。
 
 ## 维护规则
 

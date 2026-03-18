@@ -1,0 +1,178 @@
+name: Upstream Sync
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Inspect upstream sync state without pushing a branch or opening a PR"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync-upstream:
+    name: Sync upstream/master into sync branch PR
+    runs-on: ubuntu-latest
+    env:
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      DRY_RUN: ${{ inputs.dry_run }}
+      SYNC_BRANCH: sync/upstream-master
+      UPSTREAM_REPO: zeroclaw-labs/zeroclaw
+      UPSTREAM_BRANCH_FALLBACK: master
+      DEFAULT_ASSIGNEE: chumyin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare upstream sync branch
+        id: sync
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git remote get-url upstream >/dev/null 2>&1; then
+            git remote set-url upstream "https://github.com/${UPSTREAM_REPO}.git"
+          else
+            git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          fi
+
+          if git ls-remote --exit-code --heads upstream main >/dev/null 2>&1; then
+            upstream_ref="main"
+          else
+            upstream_ref="${UPSTREAM_BRANCH_FALLBACK}"
+          fi
+
+          git fetch --no-tags origin "${DEFAULT_BRANCH}"
+          git fetch --no-tags upstream "${upstream_ref}"
+
+          origin_ref="origin/${DEFAULT_BRANCH}"
+          upstream_branch_ref="upstream/${upstream_ref}"
+          origin_sha="$(git rev-parse "${origin_ref}")"
+          upstream_sha="$(git rev-parse "${upstream_branch_ref}")"
+          read -r origin_only upstream_only < <(git rev-list --left-right --count "${origin_ref}...${upstream_branch_ref}")
+
+          {
+            echo "default_branch=${DEFAULT_BRANCH}"
+            echo "upstream_ref=${upstream_ref}"
+            echo "origin_sha=${origin_sha}"
+            echo "upstream_sha=${upstream_sha}"
+            echo "origin_only=${origin_only}"
+            echo "upstream_only=${upstream_only}"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Upstream Sync State"
+            echo "- default_branch: \`${DEFAULT_BRANCH}\`"
+            echo "- upstream_ref: \`${upstream_ref}\`"
+            echo "- origin default SHA: \`${origin_sha}\`"
+            echo "- upstream SHA: \`${upstream_sha}\`"
+            echo "- commits only on ${DEFAULT_BRANCH}: \`${origin_only}\`"
+            echo "- commits only on upstream/${upstream_ref}: \`${upstream_only}\`"
+            echo "- dry_run: \`${DRY_RUN:-false}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "${origin_sha}" == "${upstream_sha}" ]]; then
+            echo "noop=true" >> "$GITHUB_OUTPUT"
+            echo "branch_pushed=false" >> "$GITHUB_OUTPUT"
+            echo "No upstream delta detected. Nothing to sync." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "noop=false" >> "$GITHUB_OUTPUT"
+
+          if [[ "${DRY_RUN:-false}" == "true" ]]; then
+            echo "branch_pushed=false" >> "$GITHUB_OUTPUT"
+            echo "Dry run only: branch push and PR creation skipped." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          git checkout -B "${SYNC_BRANCH}" "${upstream_branch_ref}"
+          git push --force-with-lease origin "HEAD:refs/heads/${SYNC_BRANCH}"
+          echo "branch_pushed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open or refresh upstream sync PR
+        if: steps.sync.outputs.noop != 'true' && steps.sync.outputs.branch_pushed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          REPO_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+
+          api_root="https://api.github.com/repos/${REPO}"
+          title="chore(sync): align ${DEFAULT_BRANCH} with upstream/${{ steps.sync.outputs.upstream_ref }}"
+          body_file="$(mktemp)"
+          request_file="$(mktemp)"
+
+          printf '%s\n' \
+            "Automated upstream sync proposal." \
+            "" \
+            "- Upstream repository: \`${UPSTREAM_REPO}\`" \
+            "- Upstream branch: \`${{ steps.sync.outputs.upstream_ref }}\`" \
+            "- Sync branch: \`${SYNC_BRANCH}\`" \
+            "- Default branch commits not in upstream: \`${{ steps.sync.outputs.origin_only }}\`" \
+            "- Upstream commits not in default branch: \`${{ steps.sync.outputs.upstream_only }}\`" \
+            "" \
+            "This PR is generated by \`.github/workflows/upstream-sync.yml\` and keeps ZeroClaw engine intake on the normal PR path instead of direct branch writes." \
+            > "${body_file}"
+
+          pulls_json="$(curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            --get \
+            --data-urlencode "state=open" \
+            --data-urlencode "head=${REPO_OWNER}:${SYNC_BRANCH}" \
+            --data-urlencode "base=${DEFAULT_BRANCH}" \
+            "${api_root}/pulls")"
+
+          pr_number="$(python3 -c 'import json,sys; pulls=json.loads(sys.argv[1]); print(pulls[0]["number"] if pulls else "")' "${pulls_json}")"
+
+          python3 -c 'import json,pathlib,sys; pathlib.Path(sys.argv[1]).write_text(json.dumps({"title": sys.argv[2], "body": pathlib.Path(sys.argv[3]).read_text()}))' \
+            "${request_file}" "${title}" "${body_file}"
+
+          if [[ -n "${pr_number}" ]]; then
+            curl -fsSL \
+              -X PATCH \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${api_root}/pulls/${pr_number}" \
+              --data @"${request_file}" >/dev/null
+            echo "Updated existing PR #${pr_number}." >> "$GITHUB_STEP_SUMMARY"
+          else
+            python3 -c 'import json,pathlib,sys; pathlib.Path(sys.argv[1]).write_text(json.dumps({"title": sys.argv[2], "head": sys.argv[4], "base": sys.argv[5], "body": pathlib.Path(sys.argv[3]).read_text()}))' \
+              "${request_file}" "${title}" "${body_file}" "${SYNC_BRANCH}" "${DEFAULT_BRANCH}"
+
+            pr_number="$(curl -fsSL \
+              -X POST \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${api_root}/pulls" \
+              --data @"${request_file}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["number"])')"
+            echo "Opened new PR #${pr_number}." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          curl -fsSL \
+            -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${api_root}/issues/${pr_number}/assignees" \
+            -d "{\"assignees\":[\"${DEFAULT_ASSIGNEE}\"]}" >/dev/null || true
+
+          echo "PR URL: https://github.com/${REPO}/pull/${pr_number}" >> "$GITHUB_STEP_SUMMARY"

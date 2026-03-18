@@ -22,6 +22,7 @@ Current maintainers with PR approval authority: `theonlyhennygod`, `JordanTheJet
 | `cross-platform-build-manual.yml` | `workflow_dispatch` | Full platform build matrix (manual) |
 | `release-beta-on-push.yml` | `push` → `master` | Beta release on every master commit |
 | `release-stable-manual.yml` | `workflow_dispatch` | Stable release (manual, version-gated) |
+| `upstream-sync.yml` | `schedule`, `workflow_dispatch` | Refresh `sync/upstream-master` and open/update an upstream intake PR |
 
 ## Event Summary
 
@@ -29,7 +30,8 @@ Current maintainers with PR approval authority: `theonlyhennygod`, `JordanTheJet
 | --- | --- |
 | PR opened or updated against `master` | `checks-on-pr.yml` |
 | Push to `master` (including after merge) | `release-beta-on-push.yml` |
-| Manual dispatch | `cross-platform-build-manual.yml`, `release-stable-manual.yml` |
+| Manual dispatch | `cross-platform-build-manual.yml`, `release-stable-manual.yml`, `upstream-sync.yml` |
+| Daily schedule | `upstream-sync.yml` |
 
 ## Step-By-Step
 

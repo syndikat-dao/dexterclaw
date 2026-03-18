@@ -36,6 +36,7 @@
 | 质量门控 | `.github/workflows/checks-on-pr.yml` | 指向 `master` 的拉取请求 |
 | Beta 发布 | `.github/workflows/release-beta-on-push.yml` | 推送到 `master` |
 | 稳定发布 | `.github/workflows/release-stable-manual.yml` | 手动 `workflow_dispatch` |
+| 上游同步 | `.github/workflows/upstream-sync.yml` | 每日计划 + 手动 `workflow_dispatch` |
 
 ## 变更控制
 
@@ -62,6 +63,9 @@ gh api repos/zeroclaw-labs/zeroclaw/actions/permissions/selected-actions
 
 ## 变更日志
 
+- 2026-03-18：添加 `upstream-sync.yml`，用于计划/手动创建上游同步 PR 自动化
+    - 白名单变更：无
+    - 复用现有来源：`actions/checkout@v4`
 - 2026-03-10：重命名工作流 — CI → 质量门控（`checks-on-pr.yml`）、Beta 发布 → Release Beta（`release-beta-on-push.yml`）、升级发布 → Release Stable（`release-stable-manual.yml`）。向质量门控添加了 `lint` 和 `security` 作业。添加了跨平台构建（`cross-platform-build-manual.yml`）。
 - 2026-03-05：完整工作流重构 — 将 22 个工作流替换为 3 个（CI、Beta 发布、升级发布）
     - 移除不再使用的模式：`DavidAnson/markdownlint-cli2-action@*`、`lycheeverse/lychee-action@*`、`EmbarkStudios/cargo-deny-action@*`、`rustsec/audit-check@*`、`rhysd/actionlint@*`、`sigstore/cosign-installer@*`、`Checkmarx/vorpal-reviewdog-github-action@*`、`useblacksmith/*`
